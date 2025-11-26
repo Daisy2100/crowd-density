@@ -18,6 +18,16 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v3
 
+      - name: Free Disk Space
+        run: |
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af --volumes
+          df -h
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
@@ -31,6 +41,7 @@ jobs:
         run: |
           mkdir -p dist
           docker save -o dist/crowd-density-backend-$(date +%Y%m%d%H%M).tar crowd-density-backend:latest
+          ls -lh dist/
 
       - name: Authenticate to GCP
         uses: google-github-actions/auth@v2
