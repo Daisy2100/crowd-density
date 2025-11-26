@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # Backend API (Vision) - FastAPI + YOLOv8n
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crowd-density-backend
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - crowd-network
+
+  # n8n (Automation Brain) - Workflow & AI Integration
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: crowd-density-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=Asia/Taipei
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - crowd-network
+
+networks:
+  crowd-network:
+    driver: bridge
+
+volumes:
+  n8n_data:
+    driver: local
