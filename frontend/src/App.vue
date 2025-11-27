@@ -493,6 +493,28 @@ const triggerVideoInput = () => {
   videoFileInputRef.value?.click()
 }
 
+// ============== 輸入來源按鈕處理 ==============
+const selectImageSource = () => {
+  inputSource.value = 'image'
+  triggerFileInput()
+}
+
+const selectVideoSource = () => {
+  inputSource.value = 'video'
+  triggerVideoInput()
+}
+
+const selectUrlSource = () => {
+  inputSource.value = 'url'
+}
+
+const selectCameraSource = () => {
+  inputSource.value = 'camera'
+  if (!isStreaming.value) {
+    startStream()
+  }
+}
+
 // ============== 清除上傳的內容 ==============
 const clearUpload = () => {
   uploadedImageUrl.value = null
@@ -529,7 +551,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="min-h-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+  <div class="h-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 overflow-hidden">
     <!-- Sidebar Toggle Button (Mobile) -->
     <button 
       @click="toggleSidebar"
@@ -541,7 +563,7 @@ onBeforeUnmount(() => {
     <!-- Sidebar -->
     <aside 
       :class="[
-        'fixed lg:relative z-40 w-80 h-screen bg-gray-900/95 backdrop-blur-xl border-r border-purple-500/30 overflow-y-auto transition-transform duration-300',
+        'fixed lg:relative z-40 w-80 h-screen bg-gray-900/95 backdrop-blur-xl border-r border-purple-500/30 overflow-y-auto transition-transform duration-300 flex-shrink-0',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
       ]"
     >
@@ -682,23 +704,23 @@ onBeforeUnmount(() => {
     </aside>
 
     <!-- Main Content Area -->
-    <div class="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+    <div class="flex-1 flex flex-col h-screen overflow-hidden">
       <!-- Header -->
-      <header class="text-center py-6 px-4 bg-black/20">
-        <h1 class="text-3xl md:text-4xl font-bold text-white mb-2 drop-shadow-2xl">
+      <header class="text-center py-3 px-4 bg-black/20 flex-shrink-0">
+        <h1 class="text-2xl md:text-3xl font-bold text-white mb-1 drop-shadow-2xl">
           🎯 群眾密度監控系統
         </h1>
-        <p class="text-lg text-purple-200">AI 驅動的即時人流偵測與警報</p>
+        <p class="text-sm text-purple-200">AI 驅動的即時人流偵測與警報</p>
       </header>
 
       <!-- Main Content -->
-      <main class="flex-1 flex flex-col items-center px-4 pb-8 space-y-6 py-4">
+      <main class="flex-1 flex flex-col items-center px-4 pb-4 space-y-4 py-2 overflow-y-auto">
         <!-- Input Source Selection -->
         <div class="w-full max-w-4xl bg-gray-800/50 backdrop-blur-xl rounded-xl p-4 shadow-xl border border-purple-500/20">
           <h3 class="text-white font-bold mb-3">選擇輸入來源</h3>
           <div class="flex flex-wrap gap-2">
             <button 
-              @click="inputSource = 'image'"
+              @click="selectImageSource"
               :class="[
                 'px-4 py-2 rounded-lg font-medium transition-all',
                 inputSource === 'image' 
@@ -709,7 +731,7 @@ onBeforeUnmount(() => {
               📷 上傳圖片
             </button>
             <button 
-              @click="inputSource = 'video'"
+              @click="selectVideoSource"
               :class="[
                 'px-4 py-2 rounded-lg font-medium transition-all',
                 inputSource === 'video' 
@@ -720,7 +742,7 @@ onBeforeUnmount(() => {
               🎬 上傳影片
             </button>
             <button 
-              @click="inputSource = 'url'"
+              @click="selectUrlSource"
               :class="[
                 'px-4 py-2 rounded-lg font-medium transition-all',
                 inputSource === 'url' 
@@ -731,7 +753,7 @@ onBeforeUnmount(() => {
               🔗 影片連結
             </button>
             <button 
-              @click="inputSource = 'camera'"
+              @click="selectCameraSource"
               :class="[
                 'px-4 py-2 rounded-lg font-medium transition-all',
                 inputSource === 'camera' 
@@ -745,7 +767,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Video Container -->
-        <div class="w-full max-w-4xl h-[400px] md:h-[500px] bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 flex items-center justify-center relative">
+        <div class="w-full max-w-4xl h-[280px] md:h-[350px] bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 flex items-center justify-center relative flex-shrink-0">
           <video ref="videoRef" class="hidden" autoplay playsinline></video>
           <video ref="uploadVideoRef" v-if="uploadedVideoUrl" :src="uploadedVideoUrl" class="hidden" playsinline></video>
           <canvas ref="canvasRef" class="max-w-full max-h-full object-contain bg-black"></canvas>
@@ -948,7 +970,7 @@ onBeforeUnmount(() => {
       </main>
 
       <!-- Footer -->
-      <footer class="bg-black/40 text-center py-4 text-purple-200 text-sm border-t border-purple-500/20">
+      <footer class="bg-black/40 text-center py-2 text-purple-200 text-xs border-t border-purple-500/20 flex-shrink-0">
         <p>API: {{ apiUrl }} | ROI: {{ useRoi ? '啟用' : '停用' }} | 面積: {{ areaM2 }}㎡</p>
       </footer>
     </div>
