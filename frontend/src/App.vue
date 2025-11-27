@@ -48,7 +48,17 @@ const density = ref(0)
 const status = ref('normal')
 const isStreaming = ref(false)
 const lastUpdate = ref<Date | null>(null)
-const apiUrl = ref(import.meta.env.VITE_API_URL || 'http://localhost:8001')
+// API URL: 自動根據當前網站 domain 決定
+const getApiUrl = () => {
+  const hostname = window.location.hostname
+  // 如果是 localhost 或 127.0.0.1，使用本地 API
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:8001'
+  }
+  // 否則使用當前網站的 protocol 和 hostname
+  return `${window.location.protocol}//${hostname}`
+}
+const apiUrl = ref(getApiUrl())
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const videoFileInputRef = ref<HTMLInputElement | null>(null)
 const uploadedImageUrl = ref<string | null>(null)
