@@ -59,6 +59,19 @@ jobs:
           # SSH 測試連線
           ssh -vvv -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa daisy@${{ secrets.GCP_VM_IP }} "echo SSH OK" || exit 1
 
+          # 備份舊檔案
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa daisy@${{ secrets.GCP_VM_IP }} "
+            if [ -d ${{ secrets.GCP_VM_PATH }} ] && [ \"\$(ls -A ${{ secrets.GCP_VM_PATH }} 2>/dev/null | grep -v '^backup$')\" ]; then
+              mkdir -p ${{ secrets.GCP_VM_PATH }}/backup/backup_${TIMESTAMP}
+              find ${{ secrets.GCP_VM_PATH }} -maxdepth 1 ! -name 'backup' ! -path ${{ secrets.GCP_VM_PATH }} -exec mv {} ${{ secrets.GCP_VM_PATH }}/backup/backup_${TIMESTAMP}/ \; || true
+              echo 'Backup created: ${{ secrets.GCP_VM_PATH }}/backup/backup_${TIMESTAMP}'
+            else
+              mkdir -p ${{ secrets.GCP_VM_PATH }}
+              echo 'No existing files to backup'
+            fi
+          " || exit 1
+
           # 傳檔案
           scp -v -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_rsa -r frontend/dist/* daisy@${{ secrets.GCP_VM_IP }}:${{ secrets.GCP_VM_PATH }} || exit 1
 
