@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount, nextTick } from 'vue'
+
+// ============== 常數定義 ==============
+const MIN_DENSITY_THRESHOLD = 0.001
+const VIDEO_DETECTION_INTERVAL_MS = 500
 
 interface BoundingBox {
   x1: number
@@ -62,7 +66,7 @@ let videoDetectionInterval: number | null = null
 
 // ============== 計算屬性 ==============
 const densityRatio = computed(() => {
-  return Math.min(density.value / Math.max(densityDanger.value, 0.001), 1.0)
+  return Math.min(density.value / Math.max(densityDanger.value, MIN_DENSITY_THRESHOLD), 1.0)
 })
 
 const densityBarColor = computed(() => {
@@ -362,15 +366,15 @@ const processVideoFile = async (file: File) => {
   uploadedImageUrl.value = null
   
   // 等待 DOM 更新後播放影片
-  setTimeout(() => {
+  nextTick(() => {
     startVideoPlayback()
-  }, 100)
+  })
 }
 
 // ============== 載入影片連結 ==============
 const loadVideoUrl = () => {
   if (!videoUrl.value) {
-    alert('請輸入影片連結')
+    alert('請輸入影片連結（支援 mp4/avi/mov 格式的直連網址）')
     return
   }
   
@@ -382,9 +386,9 @@ const loadVideoUrl = () => {
   uploadedVideoUrl.value = videoUrl.value
   uploadedImageUrl.value = null
   
-  setTimeout(() => {
+  nextTick(() => {
     startVideoPlayback()
-  }, 100)
+  })
 }
 
 // ============== 開始影片播放與偵測 ==============
@@ -400,7 +404,7 @@ const startVideoPlayback = () => {
   }
   
   video.onerror = () => {
-    alert('無法載入影片，請確認連結正確且為公開影片')
+    alert('無法載入影片。請確認：\n1. 連結為有效的直連網址（mp4/avi/mov）\n2. 影片為公開可存取\n3. 伺服器允許跨域存取（CORS）')
     uploadedVideoUrl.value = null
   }
   
@@ -419,7 +423,7 @@ const startVideoDetection = () => {
   
   videoDetectionInterval = window.setInterval(() => {
     captureVideoFrame()
-  }, 500) // 每 500ms 偵測一次
+  }, VIDEO_DETECTION_INTERVAL_MS)
 }
 
 // ============== 擷取影片幀並偵測 ==============
