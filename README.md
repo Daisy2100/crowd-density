@@ -89,12 +89,28 @@ cd Crowd-Density-Detection
 #### 2️⃣ 啟動後端服務 (Linux/macOS)
 
 ```bash
-# 啟動後端與 n8n
-docker-compose up -d --build
-
-# 查看服務狀態
-docker-compose ps
+# 一鍵啟動 (推薦)
+./setup.sh
 ```
+
+**或手動啟動 (推薦開發使用):**
+
+```bash
+# 進入後端目錄
+cd backend
+
+# 建立虛擬環境
+python3 -m venv venv
+source venv/bin/activate
+
+# 安裝依賴
+pip install -r requirements.txt
+
+# 啟動後端服務
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+```
+
+> 💡 **注意:** Docker 方式 (`docker-compose up -d --build`) 建議用於**生產部署**，而非日常開發。
 
 #### 3️⃣ 啟動前端 (開發模式)
 
@@ -135,8 +151,9 @@ crowd-density/
 │   ├── tsconfig.json            # TypeScript 配置
 │   ├── .env.development         # 開發環境配置
 │   └── .env.production          # 生產環境配置
-├── docker-compose.yaml          # 多服務編排配置
+├── docker-compose.yaml          # 多服務編排配置 (生產部署用)
 ├── setup.ps1                    # 快速設置腳本 (Windows)
+├── setup.sh                     # 快速設置腳本 (Linux/macOS)
 ├── app.py                       # [舊版] Streamlit 應用 (保留)
 ├── requirements.txt             # [舊版] Python 依賴 (保留)
 └── README.md                    # 專案文檔 (本文件)
@@ -226,19 +243,17 @@ crowd-density/
 
 ## 部署指南
 
-### 本地開發部署
+### 本地開發
 
-#### 後端服務 (Docker)
+#### 後端服務 (Local Python - 推薦開發使用)
 
 ```bash
-# 啟動後端與 n8n
-docker-compose up -d --build
-
-# 查看狀態
-docker-compose ps
-
-# 停止服務
-docker-compose down
+cd backend
+python3 -m venv venv
+source venv/bin/activate  # Linux/macOS
+# 或 .\venv\Scripts\Activate.ps1  # Windows
+pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 #### 前端服務 (Vite)
@@ -250,6 +265,19 @@ npm run dev
 ```
 
 前端將在 http://localhost:5173 啟動
+
+### 生產環境部署 (Docker)
+
+```bash
+# 啟動後端與 n8n
+docker-compose up -d --build
+
+# 查看狀態
+docker-compose ps
+
+# 停止服務
+docker-compose down
+```
 
 ---
 
