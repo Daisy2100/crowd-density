@@ -1,4 +1,6 @@
 name: Deploy Crowd Density Frontend
+permissions:
+  contents: read
 
 on:
   push:
