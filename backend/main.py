@@ -2,6 +2,12 @@
 群眾密度監控 FastAPI 後端
 Vision Layer - 使用 YOLOv8n 進行人群偵測與密度計算
 內部 Port: 8001
+
+優化重點:
+1. ONNX 模型載入 (降低記憶體佔用)
+2. 主動記憶體管理 (gc.collect)
+3. 圖片尺寸限制 (防止 OOM)
+4. 推論參數優化 (imgsz=640)
 """
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
@@ -12,65 +18,91 @@ from PIL import Image
 import cv2
 import numpy as np
 import io
+import gc  # 記憶體管理
+import torch  # PyTorch 用於修復載入問題
 from typing import List, Dict, Optional
 from pydantic import BaseModel
 import logging
-import torch
+from contextlib import asynccontextmanager
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# 初始化 FastAPI
+# 全域模型變數
+model = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    應用生命週期管理 (取代舊的 on_event)
+    啟動時載入模型, 關閉時清理資源
+    """
+    global model
+    # 啟動階段
+    try:
+        logger.info("載入 YOLOv8n 模型...")
+        
+        import os
+        onnx_path = "yolov8n.onnx"
+        pt_path = "yolov8n.pt"
+        
+        if os.path.exists(onnx_path):
+            logger.info("🚀 使用 ONNX 模型 (記憶體優化)")
+            model = YOLO(onnx_path, task='detect')
+        elif os.path.exists(pt_path):
+            logger.info("📦 使用 PyTorch 模型 (修復 PyTorch 2.6+ 載入問題)")
+            
+            # 修復 PyTorch 2.6+ weights_only 預設值問題
+            # 使用 weights_only=False (信任 YOLOv8n 官方模型)
+            original_load = torch.load
+            torch.load = lambda *args, **kwargs: original_load(
+                *args, **{**kwargs, 'weights_only': False}
+            )
+            
+            try:
+                model = YOLO(pt_path)
+            finally:
+                torch.load = original_load  # 恢復原始函數
+        else:
+            raise FileNotFoundError("找不到模型檔案 (yolov8n.onnx 或 yolov8n.pt)")
+        
+        # 模型預熱 (Warmup)
+        logger.info("🔥 模型預熱中...")
+        dummy_img = np.zeros((640, 640, 3), dtype=np.uint8)
+        model(dummy_img, imgsz=640, verbose=False)
+        del dummy_img
+        gc.collect()
+        
+        logger.info("✅ YOLOv8n 模型載入並預熱完成")
+        
+    except Exception as e:
+        logger.error(f"❌ 模型載入失敗: {e}")
+        raise
+    
+    yield  # 應用運行中
+    
+    # 關閉階段 - 清理資源
+    logger.info("正在關閉應用並清理資源...")
+    model = None
+    gc.collect()
+
+# 初始化 FastAPI (使用 lifespan)
 app = FastAPI(
     title="Crowd Density Detection API",
     description="AI 驅動的群眾密度監控、警報與自動建議",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-# CORS 設定 - 允許前端存取
+# CORS 設定
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生產環境應限制特定來源
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 全域模型載入 (啟動時載入一次)
-model = None
-
-@app.on_event("startup")
-async def load_yolo_model():
-    """應用啟動時載入 YOLOv8n 模型"""
-    global model
-    try:
-        logger.info("載入 YOLOv8n 模型...")
-        
-        # 修復 PyTorch 2.6+ weights_only 預設值問題
-        # 保存原始的 torch.load 函數
-        original_torch_load = torch.load
-        
-        # 創建包裝函數，強制 weights_only=False
-        def patched_torch_load(*args, **kwargs):
-            # 如果沒有明確設置 weights_only，則設為 False（信任 YOLOv8n 官方模型）
-            if 'weights_only' not in kwargs:
-                kwargs['weights_only'] = False
-            return original_torch_load(*args, **kwargs)
-        
-        # 替換 torch.load
-        torch.load = patched_torch_load
-        logger.info("已修補 torch.load 以載入可信任的 YOLOv8n 模型")
-        
-        model = YOLO("yolov8n.pt")
-        
-        # 恢復原始函數（可選）
-        torch.load = original_torch_load
-        
-        logger.info("✅ YOLOv8n 模型載入成功")
-    except Exception as e:
-        logger.error(f"❌ 模型載入失敗: {e}")
-        raise
 
 # ============== Pydantic 模型定義 ==============
 class BoundingBox(BaseModel):
@@ -105,8 +137,11 @@ def detect_people(img_bgr: np.ndarray, conf_threshold: float = 0.5) -> tuple:
     
     Returns:
         (person_count, bounding_boxes)
+    
+    優化: 使用 imgsz=640 減少記憶體佔用, verbose=False 減少日誌
     """
-    results = model(img_bgr, conf=conf_threshold, classes=[0])  # class 0 = person
+    # 記憶體優化: 限制推論尺寸 640x640, 關閉詳細日誌
+    results = model(img_bgr, conf=conf_threshold, classes=[0], imgsz=640, verbose=False)
     boxes = results[0].boxes
     
     person_count = 0
@@ -124,6 +159,11 @@ def detect_people(img_bgr: np.ndarray, conf_threshold: float = 0.5) -> tuple:
                 "y2": y2,
                 "confidence": confidence
             })
+    
+    # 記憶體清理
+    del results
+    del boxes
+    gc.collect()
     
     return person_count, bounding_boxes
 
@@ -201,8 +241,21 @@ async def detect_crowd_density(
         # 讀取圖片
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert('RGB')
+        
+        # 記憶體優化: 限制圖片尺寸 (最大 1280x1280)
+        image.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
+        
+        # 釋放原始 bytes
+        del contents
+        gc.collect()
+        
         img_np = np.array(image)
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        
+        # 清理中間變數
+        del image
+        del img_np
+        gc.collect()
         
         original_height, original_width = img_bgr.shape[:2]
         
@@ -235,7 +288,7 @@ async def detect_crowd_density(
         
         logger.info(f"偵測完成: {person_count} 人, 密度 {density:.2f} 人/㎡, 狀態: {status}")
         
-        return DetectionResult(
+        result = DetectionResult(
             person_count=person_count,
             density=round(density, 2),
             status=status,
@@ -248,8 +301,19 @@ async def detect_crowd_density(
             message=message
         )
         
+        # 最終記憶體清理
+        del img_bgr
+        del roi_img
+        del boxes
+        del global_boxes
+        gc.collect()
+        
+        return result
+        
     except Exception as e:
         logger.error(f"偵測錯誤: {e}")
+        # 錯誤處理時也要清理記憶體
+        gc.collect()
         raise HTTPException(status_code=500, detail=f"偵測失敗: {str(e)}")
 
 @app.get("/")
@@ -274,10 +338,13 @@ async def root():
 # ============== 主程式入口 ==============
 if __name__ == "__main__":
     import uvicorn
+    # 記憶體優化配置: 單 worker, 限制併發
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
         port=8001,
-        reload=True,
-        log_level="info"
+        reload=False,  # 生產環境關閉 reload 減少記憶體
+        log_level="info",
+        workers=1,  # 單 worker 減少記憶體佔用
+        limit_concurrency=5  # 限制同時處理的請求數
     )

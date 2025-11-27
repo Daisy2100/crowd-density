@@ -32,7 +32,8 @@ const areaM2 = ref(20.0)
 const densityWarn = ref(5.0)
 const densityDanger = ref(6.5)
 const holdSeconds = ref(5)
-const sidebarOpen = ref(true)
+// 響應式側邊欄狀態：桌面版預設打開，手機版預設收起
+const sidebarOpen = ref(window.innerWidth >= 1024)
 
 // ============== 輸入來源選擇 ==============
 type InputSource = 'image' | 'video' | 'url' | 'camera'
@@ -544,160 +545,224 @@ const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value
 }
 
+// ============== 監聽視窗大小變化 ==============
+const handleResize = () => {
+  // 當視窗從手機尺寸變為桌面尺寸時，自動打開側邊欄
+  if (window.innerWidth >= 1024 && !sidebarOpen.value) {
+    sidebarOpen.value = true
+  }
+}
+
+// 添加視窗大小監聽器
+window.addEventListener('resize', handleResize)
+
 onBeforeUnmount(() => {
   stopStream()
   stopVideoPlayback()
+  window.removeEventListener('resize', handleResize)
 })
 </script>
 
 <template>
-  <div class="h-screen flex bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 overflow-hidden">
-    <!-- Sidebar Toggle Button (Mobile) -->
+  <div class="h-screen flex bg-gradient-to-br from-blue-50 via-white to-cyan-50 overflow-hidden">
+    <!-- Sidebar Toggle Button -->
     <button 
       @click="toggleSidebar"
-      class="fixed top-4 left-4 z-50 lg:hidden p-2 bg-purple-600 text-white rounded-lg shadow-lg"
+      class="fixed top-6 z-50 group transition-all duration-300"
+      :class="sidebarOpen ? 'left-[19rem]' : 'left-4'"
     >
-      {{ sidebarOpen ? '✕' : '☰' }}
+      <!-- 按鈕背景 -->
+      <div class="relative w-12 h-12 bg-white rounded-full shadow-lg border-2 border-blue-200 group-hover:border-blue-400 transition-all duration-300 group-hover:shadow-xl flex items-center justify-center">
+        <!-- 圖示 -->
+        <svg 
+          class="w-6 h-6 text-blue-600 transition-transform duration-300"
+          :class="sidebarOpen ? 'rotate-180' : ''"
+          fill="none" 
+          stroke="currentColor" 
+          viewBox="0 0 24 24"
+        >
+          <path 
+            v-if="!sidebarOpen"
+            stroke-linecap="round" 
+            stroke-linejoin="round" 
+            stroke-width="2.5" 
+            d="M4 6h16M4 12h16M4 18h16"
+          />
+          <path 
+            v-else
+            stroke-linecap="round" 
+            stroke-linejoin="round" 
+            stroke-width="2.5" 
+            d="M15 19l-7-7 7-7"
+          />
+        </svg>
+        
+        <!-- 脈動效果 -->
+        <span class="absolute inset-0 rounded-full bg-blue-400 opacity-0 group-hover:opacity-20 group-hover:animate-ping"></span>
+      </div>
+      
+      <!-- Tooltip -->
+      <div class="absolute left-14 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none whitespace-nowrap shadow-lg">
+        {{ sidebarOpen ? '收起控制面板' : '展開控制面板' }}
+        <div class="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-gray-800 rotate-45"></div>
+      </div>
     </button>
 
     <!-- Sidebar -->
     <aside 
       :class="[
-        'fixed lg:relative z-40 w-80 h-screen bg-gray-900/95 backdrop-blur-xl border-r border-purple-500/30 overflow-y-auto transition-transform duration-300 flex-shrink-0',
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        'fixed lg:relative z-40 w-80 h-screen bg-white border-r border-gray-200 overflow-y-auto transition-all duration-300 flex-shrink-0 shadow-xl',
+        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       ]"
     >
       <div class="p-6 space-y-6">
-        <h2 class="text-xl font-bold text-white flex items-center gap-2">
-          🧭 區域與門檻設定
-        </h2>
+        <div class="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl p-5 shadow-lg">
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span class="text-2xl">⚙️</span> 設定面板
+          </h2>
+          <p class="text-blue-50 text-xs mt-1">調整監控參數與閾值</p>
+        </div>
 
         <!-- ROI 設定 -->
-        <div class="space-y-4">
-          <div class="flex items-center gap-2">
+        <div class="space-y-4 bg-gray-50 rounded-2xl p-5 border border-gray-200 shadow-md">
+          <div class="flex items-center gap-3 pb-3 border-b border-gray-200">
             <input 
               type="checkbox" 
               v-model="useRoi" 
               id="useRoi"
-              class="w-4 h-4 accent-purple-500"
+              class="w-5 h-5 accent-blue-500 cursor-pointer"
             />
-            <label for="useRoi" class="text-purple-200">啟用 ROI（百分比裁切）</label>
+            <label for="useRoi" class="text-gray-800 font-semibold cursor-pointer flex items-center gap-2">
+              <span class="text-lg">🎯</span> 啟用 ROI 區域裁切
+            </label>
           </div>
           
-          <div v-if="useRoi" class="grid grid-cols-2 gap-4 p-4 bg-gray-800/50 rounded-lg">
+          <div v-if="useRoi" class="grid grid-cols-2 gap-4 p-4 bg-white rounded-xl border border-blue-200 shadow-sm">
             <div>
-              <label class="block text-purple-200 text-sm mb-1">ROI 左 (%)</label>
+              <label class="block text-gray-700 text-sm mb-2 font-medium">← 左邊界</label>
               <input 
                 type="range" 
                 v-model.number="roiX0" 
                 min="0" 
                 max="90" 
-                class="w-full accent-purple-500"
+                class="w-full accent-blue-500 h-2 cursor-pointer"
               />
-              <div class="text-white text-center">{{ roiX0 }}%</div>
+              <div class="text-gray-800 text-center font-bold mt-1 bg-blue-100 rounded-lg py-1">{{ roiX0 }}%</div>
             </div>
             <div>
-              <label class="block text-purple-200 text-sm mb-1">ROI 上 (%)</label>
+              <label class="block text-gray-700 text-sm mb-2 font-medium">↑ 上邊界</label>
               <input 
                 type="range" 
                 v-model.number="roiY0" 
                 min="0" 
                 max="90" 
-                class="w-full accent-purple-500"
+                class="w-full accent-blue-500 h-2 cursor-pointer"
               />
-              <div class="text-white text-center">{{ roiY0 }}%</div>
+              <div class="text-gray-800 text-center font-bold mt-1 bg-blue-100 rounded-lg py-1">{{ roiY0 }}%</div>
             </div>
             <div>
-              <label class="block text-purple-200 text-sm mb-1">ROI 右 (%)</label>
+              <label class="block text-gray-700 text-sm mb-2 font-medium">→ 右邊界</label>
               <input 
                 type="range" 
                 v-model.number="roiX1" 
                 min="10" 
                 max="100" 
-                class="w-full accent-purple-500"
+                class="w-full accent-blue-500 h-2 cursor-pointer"
               />
-              <div class="text-white text-center">{{ roiX1 }}%</div>
+              <div class="text-gray-800 text-center font-bold mt-1 bg-blue-100 rounded-lg py-1">{{ roiX1 }}%</div>
             </div>
             <div>
-              <label class="block text-purple-200 text-sm mb-1">ROI 下 (%)</label>
+              <label class="block text-gray-700 text-sm mb-2 font-medium">↓ 下邊界</label>
               <input 
                 type="range" 
                 v-model.number="roiY1" 
                 min="10" 
                 max="100" 
-                class="w-full accent-purple-500"
+                class="w-full accent-blue-500 h-2 cursor-pointer"
               />
-              <div class="text-white text-center">{{ roiY1 }}%</div>
+              <div class="text-gray-800 text-center font-bold mt-1 bg-blue-100 rounded-lg py-1">{{ roiY1 }}%</div>
             </div>
           </div>
         </div>
 
         <!-- 區域面積 -->
-        <div>
-          <label class="block text-purple-200 text-sm mb-2">監控區域實際面積 (㎡)</label>
+        <div class="bg-gray-50 rounded-2xl p-5 border border-gray-200 shadow-md">
+          <label class="flex items-center gap-2 text-gray-700 text-sm mb-2 font-semibold">
+            <span class="text-lg">📐</span> 監控區域實際面積 (㎡)
+          </label>
           <input 
             type="number" 
             v-model.number="areaM2" 
             min="1" 
             step="1"
-            class="w-full px-3 py-2 bg-gray-800 border border-purple-500/30 rounded-lg text-white focus:outline-none focus:border-purple-500"
+            class="w-full px-4 py-3 bg-white border-2 border-blue-300 rounded-xl text-gray-800 font-semibold text-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
           />
         </div>
 
         <!-- 警告門檻 -->
-        <div>
-          <label class="block text-purple-200 text-sm mb-2">警告門檻 (人/㎡)</label>
+        <div class="bg-orange-50 rounded-2xl p-5 border border-orange-200 shadow-md">
+          <label class="flex items-center gap-2 text-orange-700 text-sm mb-2 font-semibold">
+            <span class="text-lg">⚠️</span> 警告門檻 (人/㎡)
+          </label>
           <input 
             type="number" 
             v-model.number="densityWarn" 
             min="0.5" 
             step="0.5"
-            class="w-full px-3 py-2 bg-gray-800 border border-yellow-500/30 rounded-lg text-white focus:outline-none focus:border-yellow-500"
+            class="w-full px-4 py-3 bg-white border-2 border-orange-300 rounded-xl text-gray-800 font-semibold text-lg focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-200 transition-all"
           />
         </div>
 
         <!-- 危險門檻 -->
-        <div>
-          <label class="block text-purple-200 text-sm mb-2">危險門檻 (人/㎡)</label>
+        <div class="bg-red-50 rounded-2xl p-5 border border-red-200 shadow-md">
+          <label class="flex items-center gap-2 text-red-700 text-sm mb-2 font-semibold">
+            <span class="text-lg">🚨</span> 危險門檻 (人/㎡)
+          </label>
           <input 
             type="number" 
             v-model.number="densityDanger" 
             min="1" 
             step="0.5"
-            class="w-full px-3 py-2 bg-gray-800 border border-red-500/30 rounded-lg text-white focus:outline-none focus:border-red-500"
+            class="w-full px-4 py-3 bg-white border-2 border-red-300 rounded-xl text-gray-800 font-semibold text-lg focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-200 transition-all"
           />
         </div>
 
         <!-- 連續超標秒數 -->
-        <div>
-          <label class="block text-purple-200 text-sm mb-2">連續超標秒數（觸發預警）</label>
+        <div class="bg-gray-800/70 rounded-xl p-4 border border-gray-700/50 shadow-lg">
+          <label class="flex items-center gap-2 text-purple-100 text-sm mb-2 font-semibold">
+            <span class="text-lg">⏱️</span> 連續超標秒數（觸發預警）
+          </label>
           <input 
             type="number" 
             v-model.number="holdSeconds" 
             min="1" 
             step="1"
-            class="w-full px-3 py-2 bg-gray-800 border border-purple-500/30 rounded-lg text-white focus:outline-none focus:border-purple-500"
+            class="w-full px-4 py-3 bg-gray-900 border-2 border-purple-500/40 rounded-lg text-white font-semibold text-lg focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50 transition-all"
           />
         </div>
 
-        <p class="text-purple-300/70 text-xs">
-          依 crowd safety 文獻：&gt;5 人/㎡ 高風險、6–7 人/㎡ 極危險；10–30 秒是關鍵反應窗。
-        </p>
+        <div class="p-4 bg-gradient-to-r from-purple-900/40 to-indigo-900/40 rounded-xl border border-purple-500/30">
+          <p class="text-purple-100 text-xs leading-relaxed font-medium">
+            💡 依 crowd safety 文獻：&gt;5 人/㎡ 高風險、6–7 人/㎡ 極危險；10–30 秒是關鍵反應窗。
+          </p>
+        </div>
 
         <!-- 密度分級標準 -->
-        <div class="p-4 bg-gray-800/50 rounded-lg space-y-2">
-          <h3 class="text-white font-bold mb-2">📊 密度分級標準</h3>
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 bg-green-500 rounded-full"></span>
-            <span class="text-green-200 text-sm">&lt; {{ densityWarn }} 人/㎡ - 正常 (低風險)</span>
+        <div class="p-5 bg-white rounded-2xl space-y-3 border border-gray-200 shadow-lg">
+          <h3 class="text-gray-800 font-bold mb-3 flex items-center gap-2 text-lg">
+            <span>📊</span> 密度分級標準
+          </h3>
+          <div class="flex items-center gap-3 p-3 bg-green-50 rounded-xl hover:bg-green-100 transition-all border border-green-200">
+            <span class="w-4 h-4 bg-green-500 rounded-full shadow-md"></span>
+            <span class="text-green-700 text-sm font-semibold">&lt; {{ densityWarn }} 人/㎡ - 正常 (低風險)</span>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 bg-orange-500 rounded-full"></span>
-            <span class="text-orange-200 text-sm">{{ densityWarn }} - {{ densityDanger }} 人/㎡ - 警告 (高風險)</span>
+          <div class="flex items-center gap-3 p-3 bg-orange-50 rounded-xl hover:bg-orange-100 transition-all border border-orange-200">
+            <span class="w-4 h-4 bg-orange-500 rounded-full shadow-md"></span>
+            <span class="text-orange-700 text-sm font-semibold">{{ densityWarn }} - {{ densityDanger }} 人/㎡ - 警告 (高風險)</span>
           </div>
-          <div class="flex items-center gap-2">
-            <span class="w-3 h-3 bg-red-500 rounded-full"></span>
-            <span class="text-red-200 text-sm">≥ {{ densityDanger }} 人/㎡ - 危險 (極危險)</span>
+          <div class="flex items-center gap-3 p-3 bg-red-50 rounded-xl hover:bg-red-100 transition-all border border-red-200">
+            <span class="w-4 h-4 bg-red-500 rounded-full shadow-md animate-pulse"></span>
+            <span class="text-red-700 text-sm font-semibold">≥ {{ densityDanger }} 人/㎡ - 危險 (極危險)</span>
           </div>
         </div>
       </div>
@@ -706,26 +771,28 @@ onBeforeUnmount(() => {
     <!-- Main Content Area -->
     <div class="flex-1 flex flex-col h-screen overflow-hidden">
       <!-- Header -->
-      <header class="text-center py-3 px-4 bg-black/20 flex-shrink-0">
-        <h1 class="text-2xl md:text-3xl font-bold text-white mb-1 drop-shadow-2xl">
+      <header class="text-center py-6 px-4 bg-white/80 backdrop-blur-sm flex-shrink-0 border-b border-gray-200 shadow-sm">
+        <h1 class="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-cyan-600 to-blue-600 mb-2 animate-gradient">
           🎯 群眾密度監控系統
         </h1>
-        <p class="text-sm text-purple-200">AI 驅動的即時人流偵測與警報</p>
+        <p class="text-sm md:text-base text-gray-600 font-medium">🤖 AI 驅動的即時人流偵測與智能警報系統</p>
       </header>
 
       <!-- Main Content -->
       <main class="flex-1 flex flex-col items-center px-4 pb-4 space-y-4 py-2 overflow-y-auto">
         <!-- Input Source Selection -->
-        <div class="w-full max-w-4xl bg-gray-800/50 backdrop-blur-xl rounded-xl p-4 shadow-xl border border-purple-500/20">
-          <h3 class="text-white font-bold mb-3">選擇輸入來源</h3>
-          <div class="flex flex-wrap gap-2">
+        <div class="w-full max-w-4xl bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
+          <h3 class="text-gray-800 font-bold mb-4 text-lg flex items-center gap-2">
+            <span class="text-xl">🎬</span> 選擇輸入來源
+          </h3>
+          <div class="flex flex-wrap gap-3">
             <button 
               @click="selectImageSource"
               :class="[
-                'px-4 py-2 rounded-lg font-medium transition-all',
+                'px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-md',
                 inputSource === 'image' 
-                  ? 'bg-purple-600 text-white' 
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-blue-300 ring-2 ring-blue-300' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
               ]"
             >
               📷 上傳圖片
@@ -733,10 +800,10 @@ onBeforeUnmount(() => {
             <button 
               @click="selectVideoSource"
               :class="[
-                'px-4 py-2 rounded-lg font-medium transition-all',
+                'px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-md',
                 inputSource === 'video' 
-                  ? 'bg-purple-600 text-white' 
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-blue-300 ring-2 ring-blue-300' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
               ]"
             >
               🎬 上傳影片
@@ -744,10 +811,10 @@ onBeforeUnmount(() => {
             <button 
               @click="selectUrlSource"
               :class="[
-                'px-4 py-2 rounded-lg font-medium transition-all',
+                'px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-md',
                 inputSource === 'url' 
-                  ? 'bg-purple-600 text-white' 
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-blue-300 ring-2 ring-blue-300' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
               ]"
             >
               🔗 影片連結
@@ -755,19 +822,19 @@ onBeforeUnmount(() => {
             <button 
               @click="selectCameraSource"
               :class="[
-                'px-4 py-2 rounded-lg font-medium transition-all',
+                'px-6 py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-md',
                 inputSource === 'camera' 
-                  ? 'bg-purple-600 text-white' 
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-blue-300 ring-2 ring-blue-300' 
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
               ]"
             >
-              📹 拍照
+              📹 即時監控
             </button>
           </div>
         </div>
 
         <!-- Video Container -->
-        <div class="w-full max-w-4xl h-[280px] md:h-[350px] bg-gray-900 rounded-xl overflow-hidden shadow-2xl border border-purple-500/30 flex items-center justify-center relative flex-shrink-0">
+        <div class="w-full max-w-4xl h-[280px] md:h-[350px] bg-gray-100 rounded-2xl overflow-hidden shadow-lg border-2 border-gray-300 flex items-center justify-center relative flex-shrink-0">
           <video ref="videoRef" class="hidden" autoplay playsinline></video>
           <video ref="uploadVideoRef" v-if="uploadedVideoUrl" :src="uploadedVideoUrl" class="hidden" playsinline></video>
           <canvas ref="canvasRef" class="max-w-full max-h-full object-contain bg-black"></canvas>
@@ -784,7 +851,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Input Source Controls -->
-        <div class="w-full max-w-4xl bg-gray-800/50 backdrop-blur-xl rounded-xl p-4 shadow-xl border border-purple-500/20">
+        <div class="w-full max-w-4xl bg-white rounded-2xl p-5 shadow-lg border border-gray-200">
           <!-- Image Upload -->
           <div v-if="inputSource === 'image'" class="flex flex-wrap justify-center gap-3">
             <button 
@@ -849,7 +916,7 @@ onBeforeUnmount(() => {
                 type="text" 
                 v-model="videoUrl" 
                 placeholder="請貼上影片連結（mp4/avi/mov 直連網址）"
-                class="flex-1 px-4 py-3 bg-gray-700 border border-purple-500/30 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+                class="flex-1 px-4 py-3 bg-white border-2 border-gray-300 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
               />
               <button 
                 @click="loadVideoUrl" 
@@ -863,7 +930,7 @@ onBeforeUnmount(() => {
               <button 
                 v-if="isPlayingVideo" 
                 @click="stopVideoPlayback" 
-                class="px-6 py-3 bg-gradient-to-r from-red-600 to-red-800 text-white font-bold rounded-lg hover:scale-105 hover:shadow-2xl hover:shadow-red-500/50 transition-all border border-red-400/30"
+                class="px-6 py-3 bg-gradient-to-r from-red-400 to-red-500 text-white font-bold rounded-xl hover:scale-105 hover:shadow-lg transition-all"
               >
                 ⏹️ 停止播放
               </button>
@@ -875,7 +942,7 @@ onBeforeUnmount(() => {
             <button 
               v-if="!isStreaming" 
               @click="startStream" 
-              class="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-700 text-white font-bold rounded-lg hover:scale-105 hover:shadow-2xl hover:shadow-green-500/50 transition-all border border-green-400/30"
+              class="px-6 py-3 bg-gradient-to-r from-green-400 to-emerald-500 text-white font-bold rounded-xl hover:scale-105 hover:shadow-lg transition-all"
             >
               📹 開始監控
             </button>
@@ -890,88 +957,114 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Info Panel -->
-        <div class="w-full max-w-4xl bg-gray-800/50 backdrop-blur-xl rounded-xl p-6 shadow-2xl border border-purple-500/20">
+        <div class="w-full max-w-4xl bg-white rounded-2xl p-6 shadow-lg border border-gray-200">
           <!-- Stats Grid -->
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <!-- Person Count -->
-            <div class="bg-gradient-to-br from-blue-600/30 to-blue-800/30 border border-blue-500/30 rounded-lg p-4 text-center hover:transform hover:-translate-y-1 transition-all duration-300 shadow-lg">
-              <div class="text-blue-200 text-sm mb-2 font-medium">人數</div>
-              <div class="text-white text-3xl font-bold drop-shadow-lg">{{ personCount }}</div>
+            <div class="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-300 rounded-2xl p-5 text-center hover:transform hover:-translate-y-1 hover:shadow-xl transition-all duration-300 shadow-md">
+              <div class="text-blue-600 text-xs uppercase tracking-wider mb-2 font-bold">👥 人數</div>
+              <div class="text-blue-700 text-4xl font-extrabold">{{ personCount }}</div>
             </div>
             
             <!-- Density -->
-            <div class="bg-gradient-to-br from-purple-600/30 to-purple-800/30 border border-purple-500/30 rounded-lg p-4 text-center hover:transform hover:-translate-y-1 transition-all duration-300 shadow-lg">
-              <div class="text-purple-200 text-sm mb-2 font-medium">密度</div>
-              <div class="text-white text-3xl font-bold drop-shadow-lg">
+            <div class="bg-gradient-to-br from-cyan-50 to-cyan-100 border-2 border-cyan-300 rounded-2xl p-5 text-center hover:transform hover:-translate-y-1 hover:shadow-xl transition-all duration-300 shadow-md">
+              <div class="text-cyan-600 text-xs uppercase tracking-wider mb-2 font-bold">📊 密度</div>
+              <div class="text-cyan-700 text-4xl font-extrabold">
                 {{ density.toFixed(2) }}
-                <span class="text-sm">人/㎡</span>
+                <span class="text-base">人/㎡</span>
               </div>
             </div>
             
             <!-- Status -->
             <div 
-              class="rounded-lg p-4 text-center hover:transform hover:-translate-y-1 transition-all duration-300 shadow-lg"
+              class="rounded-2xl p-5 text-center hover:transform hover:-translate-y-1 transition-all duration-300 shadow-md"
               :class="{
-                'bg-gradient-to-br from-green-600/30 to-green-800/30 border border-green-500/50': status === 'normal',
-                'bg-gradient-to-br from-yellow-600/30 to-yellow-800/30 border border-yellow-500/50 animate-pulse': status === 'warning',
-                'bg-gradient-to-br from-red-600/30 to-red-800/30 border border-red-500/50 animate-pulse': status === 'danger'
+                'bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-300 hover:shadow-xl': status === 'normal',
+                'bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-300 animate-pulse hover:shadow-xl': status === 'warning',
+                'bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-300 animate-pulse hover:shadow-xl': status === 'danger'
               }"
             >
               <div 
-                class="text-sm mb-2 font-medium"
+                class="text-xs uppercase tracking-wider mb-2 font-bold"
                 :class="{
-                  'text-green-200': status === 'normal',
-                  'text-yellow-200': status === 'warning',
-                  'text-red-200': status === 'danger'
+                  'text-green-600': status === 'normal',
+                  'text-orange-600': status === 'warning',
+                  'text-red-600': status === 'danger'
                 }"
               >
-                狀態
+                {{ status === 'normal' ? '✅' : status === 'warning' ? '⚠️' : '🚨' }} 狀態
               </div>
-              <div class="text-white text-3xl font-bold drop-shadow-lg">{{ getStatusText() }}</div>
+              <div 
+                class="text-4xl font-extrabold"
+                :class="{
+                  'text-green-700': status === 'normal',
+                  'text-orange-700': status === 'warning',
+                  'text-red-700': status === 'danger'
+                }"
+              >{{ getStatusText() }}</div>
             </div>
 
             <!-- Over Threshold Time -->
             <div 
-              class="rounded-lg p-4 text-center hover:transform hover:-translate-y-1 transition-all duration-300 shadow-lg"
+              class="rounded-2xl p-5 text-center hover:transform hover:-translate-y-1 transition-all duration-300 shadow-md"
               :class="secondsOverThreshold > 0 
-                ? 'bg-gradient-to-br from-orange-600/30 to-orange-800/30 border border-orange-500/50' 
-                : 'bg-gradient-to-br from-gray-600/30 to-gray-800/30 border border-gray-500/30'"
+                ? 'bg-gradient-to-br from-orange-50 to-orange-100 border-2 border-orange-300 hover:shadow-xl' 
+                : 'bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-300'"
             >
-              <div class="text-orange-200 text-sm mb-2 font-medium">超標時間</div>
-              <div class="text-white text-3xl font-bold drop-shadow-lg">
+              <div 
+                class="text-xs uppercase tracking-wider mb-2 font-bold"
+                :class="secondsOverThreshold > 0 ? 'text-orange-600' : 'text-gray-500'"
+              >
+                ⏱️ 超標時間
+              </div>
+              <div 
+                class="text-4xl font-extrabold"
+                :class="secondsOverThreshold > 0 ? 'text-orange-700' : 'text-gray-600'"
+              >
                 {{ secondsOverThreshold.toFixed(1) }}
-                <span class="text-sm">秒</span>
+                <span class="text-base">秒</span>
               </div>
             </div>
           </div>
 
           <!-- Density Bar -->
           <div class="mb-6">
-            <div class="text-purple-200 text-sm mb-2 font-medium">密度條</div>
-            <div class="w-full h-6 bg-gray-700 rounded-lg overflow-hidden border border-gray-600">
+            <div class="text-gray-700 text-sm mb-3 font-bold flex items-center gap-2">
+              <span>📈</span> 密度視覺化
+            </div>
+            <div class="w-full h-8 bg-gray-100 rounded-xl overflow-hidden border-2 border-gray-300 shadow-sm relative">
               <div 
-                class="h-full transition-all duration-300"
+                class="h-full transition-all duration-500 ease-out"
                 :class="densityBarColor"
                 :style="{ width: `${densityRatio * 100}%` }"
               ></div>
+              <!-- 閾值標記 -->
+              <div 
+                class="absolute top-0 bottom-0 w-0.5 bg-orange-400"
+                :style="{ left: `${(densityWarn / Math.max(densityDanger, 0.001)) * 100}%` }"
+              ></div>
             </div>
-            <div class="flex justify-between text-xs text-gray-400 mt-1">
-              <span>0</span>
-              <span class="text-yellow-400">{{ densityWarn }}</span>
-              <span class="text-red-400">{{ densityDanger }}</span>
+            <div class="flex justify-between text-sm font-semibold mt-2">
+              <span class="text-green-600">0</span>
+              <span class="text-orange-600">⚠️ {{ densityWarn }}</span>
+              <span class="text-red-600">🚨 {{ densityDanger }}</span>
             </div>
           </div>
 
           <!-- Last Update -->
-          <div v-if="lastUpdate" class="text-center text-purple-300 text-sm font-medium">
-            最後更新: {{ lastUpdate.toLocaleTimeString('zh-TW') }}
+          <div v-if="lastUpdate" class="text-center text-gray-700 text-sm font-semibold bg-blue-50 py-3 px-4 rounded-xl border border-blue-200 shadow-sm">
+            <span class="text-blue-500">🕐</span> 最後更新: {{ lastUpdate.toLocaleTimeString('zh-TW') }}
           </div>
         </div>
       </main>
 
       <!-- Footer -->
-      <footer class="bg-black/40 text-center py-2 text-purple-200 text-xs border-t border-purple-500/20 flex-shrink-0">
-        <p>API: {{ apiUrl }} | ROI: {{ useRoi ? '啟用' : '停用' }} | 面積: {{ areaM2 }}㎡</p>
+      <footer class="bg-white/90 backdrop-blur-sm text-center py-3 text-gray-600 text-xs border-t border-gray-200 flex-shrink-0 shadow-sm">
+        <div class="flex justify-center items-center gap-4 flex-wrap">
+          <span class="bg-blue-50 px-3 py-1 rounded-full border border-blue-200">🔗 API: {{ apiUrl }}</span>
+          <span class="bg-cyan-50 px-3 py-1 rounded-full border border-cyan-200">🎯 ROI: {{ useRoi ? '✅ 啟用' : '❌ 停用' }}</span>
+          <span class="bg-blue-50 px-3 py-1 rounded-full border border-blue-200">📐 面積: {{ areaM2 }}㎡</span>
+        </div>
       </footer>
     </div>
   </div>
