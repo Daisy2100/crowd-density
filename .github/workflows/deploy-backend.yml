@@ -1,5 +1,8 @@
 name: Deploy Crowd Density Backend
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
