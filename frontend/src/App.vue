@@ -3,7 +3,7 @@ import { ref, computed, onBeforeUnmount, nextTick } from 'vue'
 
 // ============== 常數定義 ==============
 const MIN_DENSITY_THRESHOLD = 0.001
-const VIDEO_DETECTION_INTERVAL_MS = 500
+const VIDEO_DETECTION_INTERVAL_MS = 1000
 
 interface BoundingBox {
   x1: number
@@ -175,10 +175,11 @@ const startDetection = () => {
   if (streamInterval) {
     clearInterval(streamInterval)
   }
-  
+
+  // 使用全域常數 VIDEO_DETECTION_INTERVAL_MS (ms)
   streamInterval = window.setInterval(() => {
     captureAndDetect()
-  }, 2000)
+  }, VIDEO_DETECTION_INTERVAL_MS)
 }
 
 // ============== 擷取並偵測 ==============
