@@ -4,6 +4,7 @@ import { ref, computed, onBeforeUnmount, nextTick } from 'vue'
 // ============== 常數定義 ==============
 const MIN_DENSITY_THRESHOLD = 0.001
 const VIDEO_DETECTION_INTERVAL_MS = 1000
+const UI_UPDATE_DEBOUNCE_MS = 100 // UI 更新防抖時間
 
 interface BoundingBox {
   x1: number
@@ -71,9 +72,13 @@ const uploadedVideoUrl = ref<string | null>(null)
 const overThresholdStart = ref<number | null>(null)
 const secondsOverThreshold = ref(0)
 const showAlert = ref(false)
+const isProcessing = ref(false) // 防止重複處理
+const pendingResult = ref<DetectionResult | null>(null) // 暫存偵測結果
 
 let streamInterval: number | null = null
 let videoDetectionInterval: number | null = null
+let animationFrameId: number | null = null
+let uiUpdateTimeoutId: number | null = null
 
 // ============== 計算屬性 ==============
 const densityRatio = computed(() => {
@@ -156,7 +161,19 @@ const stopStream = () => {
     streamInterval = null
   }
   
+  // 清理動畫幀和 timeout
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
+  
+  if (uiUpdateTimeoutId) {
+    clearTimeout(uiUpdateTimeoutId)
+    uiUpdateTimeoutId = null
+  }
+  
   isStreaming.value = false
+  isProcessing.value = false
   resetState()
 }
 
@@ -182,46 +199,80 @@ const startDetection = () => {
   }, VIDEO_DETECTION_INTERVAL_MS)
 }
 
-// ============== 擷取並偵測 ==============
+// ============== 擷取並偵測 (優化版) ==============
 const captureAndDetect = async () => {
-  if (!videoRef.value || !canvasRef.value) return
+  if (!videoRef.value || !canvasRef.value || isProcessing.value) return
+  
+  isProcessing.value = true
   
   const canvas = canvasRef.value
   const video = videoRef.value
   const ctx = canvas.getContext('2d')
   
-  if (!ctx) return
+  if (!ctx) {
+    isProcessing.value = false
+    return
+  }
   
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
-  
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  
-  canvas.toBlob(async (blob) => {
-    if (!blob) return
+  // 使用 requestAnimationFrame 確保在瀏覽器下一次重繪前執行
+  animationFrameId = requestAnimationFrame(async () => {
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
     
-    try {
-      const formData = buildFormData(blob, 'frame.jpg')
-      
-      const response = await fetch(`${apiUrl.value}/api/detect`, {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (response.ok) {
-        const result: DetectionResult = await response.json()
-        personCount.value = result.person_count
-        density.value = result.density
-        status.value = result.status
-        lastUpdate.value = new Date()
-        
-        updateOverThresholdTracking()
-        drawResults(ctx, result)
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        isProcessing.value = false
+        return
       }
-    } catch (error) {
-      console.error('偵測失敗:', error)
-    }
-  }, 'image/jpeg', 0.8)
+      
+      try {
+        const formData = buildFormData(blob, 'frame.jpg')
+        
+        const response = await fetch(`${apiUrl.value}/api/detect`, {
+          method: 'POST',
+          body: formData
+        })
+        
+        if (response.ok) {
+          const result: DetectionResult = await response.json()
+          
+          // 暫存結果,使用防抖更新 UI
+          pendingResult.value = result
+          scheduleUIUpdate(ctx, result)
+        }
+      } catch (error) {
+        console.error('偵測失敗:', error)
+      } finally {
+        isProcessing.value = false
+      }
+    }, 'image/jpeg', 0.8)
+  })
+}
+
+// ============== 排程 UI 更新 (防抖) ==============
+const scheduleUIUpdate = (ctx: CanvasRenderingContext2D, result: DetectionResult) => {
+  // 清除先前的更新排程
+  if (uiUpdateTimeoutId) {
+    clearTimeout(uiUpdateTimeoutId)
+  }
+  
+  // 使用 setTimeout 進行防抖,確保 UI 不會被頻繁覆蓋
+  uiUpdateTimeoutId = window.setTimeout(() => {
+    // 使用 requestAnimationFrame 確保在下一次重繪時更新
+    requestAnimationFrame(() => {
+      personCount.value = result.person_count
+      density.value = result.density
+      status.value = result.status
+      lastUpdate.value = new Date()
+      
+      updateOverThresholdTracking()
+      drawResults(ctx, result)
+      
+      pendingResult.value = null
+    })
+  }, UI_UPDATE_DEBOUNCE_MS)
 }
 
 // ============== 繪製偵測結果 ==============
@@ -295,16 +346,32 @@ const handleFileUpload = (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   
-  if (file && file.type.startsWith('image/')) {
-    uploadAndDetect(file)
+  if (!file) {
+    console.warn('未選擇檔案')
+    return
   }
+  
+  if (!file.type.startsWith('image/')) {
+    alert('請選擇圖片檔案 (jpg, png, gif 等)')
+    return
+  }
+  
+  console.log('準備上傳圖片:', file.name, file.size, 'bytes')
+  uploadAndDetect(file)
 }
 
 // ============== 上傳並偵測圖片 ==============
 const uploadAndDetect = async (file: File) => {
   if (!canvasRef.value) return
   
+  // 防止重複上傳
+  if (isUploading.value || isProcessing.value) {
+    console.warn('上傳處理中，請稍候...')
+    return
+  }
+  
   isUploading.value = true
+  isProcessing.value = false // 確保處理狀態重置
   
   try {
     if (isStreaming.value) {
@@ -312,42 +379,78 @@ const uploadAndDetect = async (file: File) => {
     }
     stopVideoPlayback()
     
+    // 清理先前的狀態
+    resetState()
+    
     const reader = new FileReader()
     reader.onload = async (e) => {
       const img = new Image()
       img.onload = async () => {
-        const canvas = canvasRef.value!
-        const ctx = canvas.getContext('2d')!
+        if (!canvasRef.value) {
+          isUploading.value = false
+          return
+        }
+        
+        const canvas = canvasRef.value
+        const ctx = canvas.getContext('2d')
+        
+        if (!ctx) {
+          isUploading.value = false
+          alert('Canvas 初始化失敗')
+          return
+        }
         
         canvas.width = img.width
         canvas.height = img.height
         
         ctx.drawImage(img, 0, 0)
         
-        const formData = buildFormData(file, file.name)
-        
-        const response = await fetch(`${apiUrl.value}/api/detect`, {
-          method: 'POST',
-          body: formData
-        })
-        
-        if (response.ok) {
-          const result: DetectionResult = await response.json()
-          personCount.value = result.person_count
-          density.value = result.density
-          status.value = result.status
-          lastUpdate.value = new Date()
+        try {
+          const formData = buildFormData(file, file.name)
           
-          drawResults(ctx, result)
-        } else {
-          alert('偵測失敗，請稍後再試')
+          const response = await fetch(`${apiUrl.value}/api/detect`, {
+            method: 'POST',
+            body: formData
+          })
+          
+          if (response.ok) {
+            const result: DetectionResult = await response.json()
+            personCount.value = result.person_count
+            density.value = result.density
+            status.value = result.status
+            lastUpdate.value = new Date()
+            
+            updateOverThresholdTracking()
+            drawResults(ctx, result)
+          } else {
+            const errorText = await response.text()
+            console.error('API 錯誤:', errorText)
+            alert('偵測失敗，請稍後再試')
+          }
+        } catch (fetchError) {
+          console.error('API 請求失敗:', fetchError)
+          alert('無法連接到 API，請確認後端服務運行中')
         }
         
         isUploading.value = false
       }
+      
+      img.onerror = () => {
+        console.error('圖片載入失敗')
+        alert('圖片載入失敗，請確認格式正確')
+        isUploading.value = false
+      }
+      
       img.src = e.target?.result as string
       uploadedImageUrl.value = e.target?.result as string
     }
+    
+    reader.onerror = () => {
+      console.error('檔案讀取失敗')
+      alert('檔案讀取失敗')
+      isUploading.value = false
+    }
+    
     reader.readAsDataURL(file)
     
   } catch (error) {
@@ -438,9 +541,9 @@ const startVideoDetection = () => {
   }, VIDEO_DETECTION_INTERVAL_MS)
 }
 
-// ============== 擷取影片幀並偵測 ==============
+// ============== 擷取影片幀並偵測 (優化版) ==============
 const captureVideoFrame = async () => {
-  if (!uploadVideoRef.value || !canvasRef.value) return
+  if (!uploadVideoRef.value || !canvasRef.value || isProcessing.value) return
   
   const video = uploadVideoRef.value
   const canvas = canvasRef.value
@@ -448,36 +551,43 @@ const captureVideoFrame = async () => {
   
   if (!ctx || video.paused || video.ended) return
   
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
+  isProcessing.value = true
   
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  
-  canvas.toBlob(async (blob) => {
-    if (!blob) return
+  // 使用 requestAnimationFrame 確保在瀏覽器下一次重繪前執行
+  animationFrameId = requestAnimationFrame(async () => {
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
     
-    try {
-      const formData = buildFormData(blob, 'frame.jpg')
-      
-      const response = await fetch(`${apiUrl.value}/api/detect`, {
-        method: 'POST',
-        body: formData
-      })
-      
-      if (response.ok) {
-        const result: DetectionResult = await response.json()
-        personCount.value = result.person_count
-        density.value = result.density
-        status.value = result.status
-        lastUpdate.value = new Date()
-        
-        updateOverThresholdTracking()
-        drawResults(ctx, result)
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        isProcessing.value = false
+        return
       }
-    } catch (error) {
-      console.error('偵測失敗:', error)
-    }
-  }, 'image/jpeg', 0.8)
+      
+      try {
+        const formData = buildFormData(blob, 'frame.jpg')
+        
+        const response = await fetch(`${apiUrl.value}/api/detect`, {
+          method: 'POST',
+          body: formData
+        })
+        
+        if (response.ok) {
+          const result: DetectionResult = await response.json()
+          
+          // 暫存結果,使用防抖更新 UI
+          pendingResult.value = result
+          scheduleUIUpdate(ctx, result)
+        }
+      } catch (error) {
+        console.error('偵測失敗:', error)
+      } finally {
+        isProcessing.value = false
+      }
+    }, 'image/jpeg', 0.8)
+  })
 }
 
 // ============== 停止影片播放 ==============
@@ -487,12 +597,24 @@ const stopVideoPlayback = () => {
     videoDetectionInterval = null
   }
   
+  // 清理動畫幀和 timeout
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
+  
+  if (uiUpdateTimeoutId) {
+    clearTimeout(uiUpdateTimeoutId)
+    uiUpdateTimeoutId = null
+  }
+  
   if (uploadVideoRef.value) {
     uploadVideoRef.value.pause()
     uploadVideoRef.value.currentTime = 0
   }
   
   isPlayingVideo.value = false
+  isProcessing.value = false
   resetState()
 }
 
@@ -532,14 +654,43 @@ const clearUpload = () => {
   uploadedImageUrl.value = null
   uploadedVideoUrl.value = null
   videoUrl.value = ''
+  
+  // 重置所有處理狀態
+  isUploading.value = false
+  isProcessing.value = false
+  
+  // 清理動畫幀和 timeout
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId)
+    animationFrameId = null
+  }
+  
+  if (uiUpdateTimeoutId) {
+    clearTimeout(uiUpdateTimeoutId)
+    uiUpdateTimeoutId = null
+  }
+  
   resetState()
   
   if (canvasRef.value) {
     const ctx = canvasRef.value.getContext('2d')
-    ctx?.clearRect(0, 0, canvasRef.value.width, canvasRef.value.height)
+    if (ctx) {
+      ctx.clearRect(0, 0, canvasRef.value.width, canvasRef.value.height)
+      // 重置 canvas 尺寸以確保清空狀態
+      canvasRef.value.width = 0
+      canvasRef.value.height = 0
+    }
   }
   
   stopVideoPlayback()
+  
+  // 重置 file input
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+  }
+  if (videoFileInputRef.value) {
+    videoFileInputRef.value.value = ''
+  }
 }
 
 // ============== 取得狀態文字 ==============
@@ -570,6 +721,16 @@ window.addEventListener('resize', handleResize)
 onBeforeUnmount(() => {
   stopStream()
   stopVideoPlayback()
+  
+  // 清理所有計時器和動畫幀
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId)
+  }
+  
+  if (uiUpdateTimeoutId) {
+    clearTimeout(uiUpdateTimeoutId)
+  }
+  
   window.removeEventListener('resize', handleResize)
 })
 </script>
@@ -849,6 +1010,18 @@ onBeforeUnmount(() => {
           <video ref="videoRef" class="hidden" autoplay playsinline></video>
           <video ref="uploadVideoRef" v-if="uploadedVideoUrl" :src="uploadedVideoUrl" class="hidden" playsinline></video>
           <canvas ref="canvasRef" class="max-w-full max-h-full object-contain bg-black"></canvas>
+          
+          <!-- Processing Indicator -->
+          <div 
+            v-if="isProcessing" 
+            class="absolute top-4 right-4 bg-blue-500/80 text-white px-3 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-2 shadow-lg"
+          >
+            <svg class="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            處理中...
+          </div>
           
           <!-- Alert Overlay -->
           <div 

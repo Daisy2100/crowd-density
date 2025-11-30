@@ -35,7 +35,7 @@
 | **項目** | **配置與決策** | **說明** |
 | --- | --- | --- |
 | **系統目標** | AI 驅動的群眾密度監控、警報與自動建議 | 辨識 → 推理 → 行動 (通知) |
-| **主機環境** | GCP Compute Engine **`e2-medium` (4GB RAM)** | 穩定運行 YOLO 和 n8n |
+| **主機環境** | GCP Compute Engine **`e2-small` (2GB RAM)** | 穩定運行 YOLO 和 n8n |
 | **資料持久化** | **n8n 內建 SQLite** | 儲存工作流、執行紀錄和憑證 |
 
 ### II. 應用程式服務與角色
@@ -44,13 +44,13 @@
 | --- | --- | --- | --- |
 | **後端 API** (Vision) | **FastAPI + YOLOv8n** | 接收圖片 ⇒ 偵測 ⇒ 回傳結果 | 8001 |
 | **自動化核心** (Brain) | **n8n** | 排程、條件判斷、整合 Vertex AI | 5678 |
-| **前端 UI** (Dashboard) | **Vue 3 + Vite** | Webcam 截圖,**2000ms 間隔**呼叫 API | 5173 |
+| **前端 UI** (Dashboard) | **Vue 3 + Vite** | Webcam 截圖,**1000ms 間隔**呼叫 API | 5173 |
 
 ### III. 關鍵數據流與邏輯
 
 | **數據流** | **執行頻率** | **流程** | **輸出** |
 | --- | --- | --- | --- |
-| **1. 即時監控流** | **2000 毫秒** (0.5 FPS) | Vue → FastAPI → Vue | 網頁儀表板 |
+| **1. 即時監控流** | **1000 毫秒** (0.5 FPS) | Vue → FastAPI → Vue | 網頁儀表板 |
 | **2. 自動警報流** | **30 秒 - 1 分鐘** | n8n → FastAPI → Vertex AI → Discord | AI 建議警報 |
 
 ### IV. AI 與通知優化
@@ -212,32 +212,149 @@ crowd-density/
 
 ## n8n 工作流配置
 
-### 範例工作流: 自動警報系統
+### 🚀 快速設定: 後端推送警報到 Discord
 
-#### 流程設計
+本系統已整合 **後端自動推送** 功能,當偵測到 `warning` 或 `danger` 狀態時,自動發送警報到 n8n,再由 n8n 轉發到 Discord。
+
+#### 架構流程
 
 ```plaintext
-[排程觸發 (Cron)]
-    ↓
-[HTTP Request - 呼叫 Backend API]
-    ↓
-[條件判斷 - 檢查 status]
-    ↓ (warning 或 danger)
-[Vertex AI - 生成警報文案]
-    ↓
-[Discord/Telegram - 發送通知]
+[前端 Vue] → [後端 FastAPI - 偵測]
+                    ↓ (密度超標時觸發)
+              [Webhook 推送到 n8n]
+                    ↓
+              [n8n - 條件判斷]
+                    ↓
+              [Discord - 發送通知] 🔔
 ```
 
-#### 配置步驟
+#### 步驟 1: 設定 Discord Webhook
 
-1. **登入 n8n:** http://localhost:5678 (admin / admin123)
-2. **建立新工作流:** 點擊 "New Workflow"
-3. **新增節點:**
-   - **Schedule Trigger** - 每 1 分鐘執行
-   - **HTTP Request** - 呼叫 `http://backend:8001/api/detect`
-   - **IF** - 判斷 `status !== "normal"`
-   - **Vertex AI** - 生成 AI 建議
-   - **Discord/Telegram** - 發送通知
+1. **在 Discord 伺服器建立 Webhook:**
+   - 進入 Discord 頻道設定 → 整合 → Webhooks
+   - 點擊「新增 Webhook」
+   - 複製 Webhook URL (格式: `https://discord.com/api/webhooks/...`)
+
+2. **測試 Webhook (可選):**
+   ```bash
+   curl -X POST "YOUR_DISCORD_WEBHOOK_URL" \
+     -H "Content-Type: application/json" \
+     -d '{"content": "測試訊息 from n8n"}'
+   ```
+
+#### 步驟 2: 匯入 n8n 工作流程
+
+1. **登入你的 n8n:** https://n8n.daisy2100.com
+
+2. **匯入工作流程:**
+   - 點擊右上角「...」→「Import from File」
+   - 選擇專案根目錄的 `n8n-workflow-crowd-alert.json`
+   - 點擊「Import」
+
+3. **配置 Discord Webhook 憑證:**
+   - 點擊「發送到 Discord」節點
+   - 點擊「Credential to connect with」→「Create New」
+   - 選擇「Discord Webhook」
+   - 貼上你的 Discord Webhook URL
+   - 點擊「Save」
+
+4. **啟用工作流程:**
+   - 點擊右上角「Active」開關
+   - 工作流程變為運行狀態
+
+5. **取得 Webhook URL:**
+   - 點擊「Webhook 接收後端警報」節點
+   - 複製「Production URL」(格式: `https://n8n.daisy2100.com/webhook/crowd-alert`)
+
+#### 步驟 3: 配置後端環境變數
+
+在後端啟動時設定環境變數:
+
+```bash
+# Linux/macOS
+export N8N_WEBHOOK_URL="https://n8n.daisy2100.com/webhook/crowd-alert"
+export ENABLE_N8N_ALERTS="true"
+export ALERT_COOLDOWN_SECONDS="60"
+
+# Windows PowerShell
+$env:N8N_WEBHOOK_URL="https://n8n.daisy2100.com/webhook/crowd-alert"
+$env:ENABLE_N8N_ALERTS="true"
+$env:ALERT_COOLDOWN_SECONDS="60"
+```
+
+或在 Docker 部署時加入環境變數:
+
+```yaml
+# docker-compose.yaml
+services:
+  backend:
+    environment:
+      - N8N_WEBHOOK_URL=https://n8n.daisy2100.com/webhook/crowd-alert
+      - ENABLE_N8N_ALERTS=true
+      - ALERT_COOLDOWN_SECONDS=60
+```
+
+#### 步驟 4: 測試警報系統
+
+1. **啟動後端服務**
+2. **使用前端上傳高密度人群圖片** (或調低警告閾值進行測試)
+3. **檢查後端日誌:**
+   ```
+   ✅ 成功發送警報到 n8n: warning
+   ```
+4. **在 Discord 頻道查看警報訊息**
+
+#### 環境變數說明
+
+| 變數名稱 | 預設值 | 說明 |
+|---------|--------|------|
+| `N8N_WEBHOOK_URL` | `https://n8n.daisy2100.com/webhook/crowd-alert` | n8n webhook 接收端點 |
+| `ENABLE_N8N_ALERTS` | `true` | 是否啟用 n8n 警報推送 |
+| `ALERT_COOLDOWN_SECONDS` | `60` | 警報冷卻時間 (秒),避免頻繁發送 |
+
+#### 警報 Payload 格式
+
+後端發送到 n8n 的數據格式:
+
+```json
+{
+  "timestamp": "2025-11-30T12:34:56",
+  "alert_type": "danger",
+  "person_count": 35,
+  "density": 7.5,
+  "density_unit": "人/㎡",
+  "roi_area_m2": 20.0,
+  "warn_threshold": 5.0,
+  "danger_threshold": 6.5,
+  "message": "⚠️ 危險！密度達 7.50 人/㎡，請立即疏散人群",
+  "image_dimensions": {
+    "width": 1280,
+    "height": 720
+  },
+  "detection_count": 35
+}
+```
+
+### 🎨 自訂 Discord 訊息格式
+
+編輯 n8n 工作流程中的「發送到 Discord」節點,修改 `content` 欄位即可自訂訊息樣式。
+
+範例訊息格式:
+```markdown
+## 🚨 群眾密度警報
+
+**警報等級:** 🔴 危險
+**時間:** 2025-11-30 12:34:56
+
+---
+
+**📊 監控數據:**
+- 👥 人數: **35** 人
+- 📈 密度: **7.5** 人/㎡
+- 📐 監控面積: 20 ㎡
+
+⚠️ **請立即採取行動控制人流！**
+```
 
 ---
 

@@ -24,6 +24,9 @@ from typing import List, Dict, Optional
 from pydantic import BaseModel
 import logging
 from contextlib import asynccontextmanager
+import httpx  # 用於發送 webhook 到 n8n
+import os
+from datetime import datetime
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +34,14 @@ logger = logging.getLogger(__name__)
 
 # 全域模型變數
 model = None
+
+# n8n Webhook 配置
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://n8n.daisy2100.com/webhook/crowd-alert")
+ENABLE_N8N_ALERTS = os.getenv("ENABLE_N8N_ALERTS", "true").lower() == "true"
+
+# 警報節流配置 (避免頻繁發送)
+last_alert_time = None
+ALERT_COOLDOWN_SECONDS = int(os.getenv("ALERT_COOLDOWN_SECONDS", "60"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -201,6 +212,57 @@ def apply_roi(img: np.ndarray, x0p: int, y0p: int, x1p: int, y1p: int) -> tuple:
     roi = img[y0:y1, x0:x1].copy()
     return roi, (x0, y0, x1, y1)
 
+# ============== n8n Webhook 整合 ==============
+async def send_alert_to_n8n(detection_result: DetectionResult):
+    """
+    發送警報到 n8n webhook (非阻塞)
+    
+    實作警報節流機制,避免頻繁發送
+    """
+    global last_alert_time
+    
+    # 警報節流: 檢查是否在冷卻期內
+    now = datetime.now()
+    if last_alert_time is not None:
+        elapsed = (now - last_alert_time).total_seconds()
+        if elapsed < ALERT_COOLDOWN_SECONDS:
+            logger.debug(f"警報冷卻中,剩餘 {ALERT_COOLDOWN_SECONDS - elapsed:.1f} 秒")
+            return
+    
+    try:
+        # 準備 webhook payload
+        payload = {
+            "timestamp": now.isoformat(),
+            "alert_type": detection_result.status,
+            "person_count": detection_result.person_count,
+            "density": detection_result.density,
+            "density_unit": "人/㎡",
+            "roi_area_m2": detection_result.roi_area_m2,
+            "warn_threshold": detection_result.density_warn_threshold,
+            "danger_threshold": detection_result.density_danger_threshold,
+            "message": detection_result.message,
+            "image_dimensions": {
+                "width": detection_result.image_width,
+                "height": detection_result.image_height
+            },
+            "detection_count": len(detection_result.bounding_boxes)
+        }
+        
+        # 非同步發送 (timeout 5 秒)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(N8N_WEBHOOK_URL, json=payload)
+            
+            if response.status_code == 200:
+                logger.info(f"✅ 成功發送警報到 n8n: {detection_result.status}")
+                last_alert_time = now
+            else:
+                logger.warning(f"⚠️ n8n webhook 回應異常: {response.status_code}")
+                
+    except httpx.TimeoutException:
+        logger.error("❌ n8n webhook 請求超時 (5 秒)")
+    except Exception as e:
+        logger.error(f"❌ 發送 n8n webhook 失敗: {e}")
+
 # ============== API 端點 ==============
 @app.get("/api/health")
 async def health_check():
@@ -301,6 +363,10 @@ async def detect_crowd_density(
             message=message
         )
         
+        # 🚨 發送警報到 n8n (非阻塞)
+        if ENABLE_N8N_ALERTS and status in ["warning", "danger"]:
+            await send_alert_to_n8n(result)
+        
         # 最終記憶體清理
         del img_bgr
         del roi_img
@@ -316,6 +382,62 @@ async def detect_crowd_density(
         gc.collect()
         raise HTTPException(status_code=500, detail=f"偵測失敗: {str(e)}")
 
+@app.post("/api/alert")
+async def send_alert_webhook(
+    alert_type: str = Form("warning", description="警報類型: normal/warning/danger"),
+    person_count: int = Form(25, description="人數"),
+    density: float = Form(5.5, description="密度 (人/㎡)"),
+    roi_area_m2: float = Form(20.0, description="監控區域面積 (㎡)"),
+    warn_threshold: float = Form(5.0, description="警告門檻"),
+    danger_threshold: float = Form(6.5, description="危險門檻")
+):
+    """
+    手動發送警報到 n8n
+    
+    直接發送警報到 n8n webhook，可用於測試或手動觸發警報
+    """
+    try:
+        if not ENABLE_N8N_ALERTS:
+            return {
+                "success": False,
+                "message": "n8n 警報功能已停用 (ENABLE_N8N_ALERTS=false)",
+                "webhook_url": N8N_WEBHOOK_URL
+            }
+        
+        # 構建測試用的 DetectionResult
+        test_result = DetectionResult(
+            person_count=person_count,
+            density=round(density, 2),
+            status=alert_type,
+            bounding_boxes=[],
+            image_width=1280,
+            image_height=720,
+            roi_area_m2=roi_area_m2,
+            density_warn_threshold=warn_threshold,
+            density_danger_threshold=danger_threshold,
+            message=f"🧪 測試警報 - {alert_type} 等級"
+        )
+        
+        # 發送到 n8n
+        await send_alert_to_n8n(test_result)
+        
+        return {
+            "success": True,
+            "message": "警報已發送",
+            "webhook_url": N8N_WEBHOOK_URL,
+            "payload": {
+                "alert_type": alert_type,
+                "person_count": person_count,
+                "density": density,
+                "roi_area_m2": roi_area_m2
+            },
+            "note": "請檢查 Discord 頻道是否收到訊息"
+        }
+        
+    except Exception as e:
+        logger.error(f"發送警報失敗: {e}")
+        raise HTTPException(status_code=500, detail=f"測試失敗: {str(e)}")
+
 @app.get("/")
 async def root():
     """根端點 - API 資訊"""
@@ -324,14 +446,20 @@ async def root():
         "version": "1.0.0",
         "description": "AI 驅動的群眾密度監控 - FastAPI + YOLOv8n",
         "endpoints": {
-            "health": "/health",
+            "health": "/api/health (GET)",
             "detect": "/api/detect (POST)",
+            "alert": "/api/alert (POST) - 手動發送警報到 n8n",
             "docs": "/docs"
         },
         "tech_stack": {
             "backend": "FastAPI",
             "model": "YOLOv8n",
             "port": 8001
+        },
+        "n8n_integration": {
+            "enabled": ENABLE_N8N_ALERTS,
+            "webhook_url": N8N_WEBHOOK_URL if ENABLE_N8N_ALERTS else "disabled",
+            "cooldown_seconds": ALERT_COOLDOWN_SECONDS
         }
     }
 

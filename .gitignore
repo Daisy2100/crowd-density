@@ -65,6 +65,7 @@ coverage.xml
 # Environments
 .env
 .env.local
+.env.example
 
 # ==================== Node.js / Frontend ====================
 # Dependencies
