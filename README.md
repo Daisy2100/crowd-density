@@ -43,21 +43,20 @@
 | **服務** | **技術棧** | **核心功能** | **端口** |
 | --- | --- | --- | --- |
 | **後端 API** (Vision) | **FastAPI + YOLOv8n** | 接收圖片 ⇒ 偵測 ⇒ 回傳結果 | 8001 |
-| **自動化核心** (Brain) | **n8n** | 排程、條件判斷、整合 Vertex AI | 5678 |
-| **前端 UI** (Dashboard) | **Vue 3 + Vite** | Webcam 截圖,**1000ms 間隔**呼叫 API | 5173 |
+| **自動化核心** (Brain) | **n8n** | 排程、條件判斷、Discord 警報推送 | 5678 |
+| **前端 UI** (Dashboard) | **Vue 3** | Webcam 截圖,**1000ms 間隔**呼叫 API | 5173 |
 
 ### III. 關鍵數據流與邏輯
 
 | **數據流** | **執行頻率** | **流程** | **輸出** |
 | --- | --- | --- | --- |
-| **1. 即時監控流** | **1000 毫秒** (0.5 FPS) | Vue → FastAPI → Vue | 網頁儀表板 |
-| **2. 自動警報流** | **30 秒 - 1 分鐘** | n8n → FastAPI → Vertex AI → Discord | AI 建議警報 |
+| **1. 即時監控流** | **1000 毫秒** (1 FPS) | Vue → FastAPI → Vue | 網頁儀表板 |
+| **2. 自動警報流** | **觸發式** (冷卻 60 秒) | FastAPI → n8n → Discord | 即時警報推送 |
 
 ### IV. AI 與通知優化
 
 - **視覺 (Vision):** **YOLOv8n** - 在共享 CPU 環境快速推論
-- **大腦 (Reasoning):** **Google Vertex AI (Gemini)** - 生成人性化警報文案
-- **警報服務:** **Telegram / Discord** - 免費且無限量推播
+- **警報服務:** **Discord** - 免費且即時的通知推播
 
 ---
 
@@ -125,7 +124,7 @@ npm run dev
 - **前端介面:** http://localhost:5173
 - **後端 API:** http://localhost:8001
 - **API 文檔:** http://localhost:8001/docs
-- **n8n 平台:** http://localhost:5678 (帳號: `admin` / 密碼: `admin123`)
+- **n8n 平台:** http://localhost:5678
 
 ---
 
@@ -151,168 +150,14 @@ crowd-density/
 │   ├── tsconfig.json            # TypeScript 配置
 │   ├── .env.development         # 開發環境配置
 │   └── .env.production          # 生產環境配置
-├── docker-compose.yaml          # 多服務編排配置 (生產部署用)
 ├── setup.ps1                    # 快速設置腳本 (Windows)
 ├── setup.sh                     # 快速設置腳本 (Linux/macOS)
-├── app.py                       # [舊版] Streamlit 應用 (保留)
-├── requirements.txt             # [舊版] Python 依賴 (保留)
 └── README.md                    # 專案文檔 (本文件)
 ```
 
----
 
-## API 文檔
 
-### 端點總覽
-
-| 方法 | 端點 | 說明 |
-| --- | --- | --- |
-| `GET` | `/` | API 根路徑資訊 |
-| `GET` | `/api/healthy` | 健康檢查 |
-| `POST` | `/api/detect` | 人員偵測與密度分析 |
-
-### `POST /api/detect`
-
-**功能:** 上傳圖片進行人員偵測與密度計算
-
-**請求參數:**
-
-| 參數 | 類型 | 必填 | 預設值 | 說明 |
-| --- | --- | --- | --- | --- |
-| `file` | File | ✅ | - | 圖片檔案 (JPEG/PNG) |
-| `roi_area_m2` | float | ❌ | 20.0 | 監控區域面積 (平方公尺) |
-| `density_warn` | float | ❌ | 5.0 | 警告閾值 (人/㎡) |
-| `density_danger` | float | ❌ | 6.5 | 危險閾值 (人/㎡) |
-
-**回應範例:**
-
-```json
-{
-  "person_count": 12,
-  "density": 0.6,
-  "status": "normal",
-  "bounding_boxes": [
-    {
-      "x1": 120,
-      "y1": 80,
-      "x2": 200,
-      "y2": 300,
-      "confidence": 0.92
-    }
-  ],
-  "image_width": 1280,
-  "image_height": 720,
-  "roi_area_m2": 20.0
-}
-```
-
-**互動式文檔:** http://localhost:8001/docs
-
----
-
-## n8n 工作流配置
-
-### 🚀 快速設定: 後端推送警報到 Discord
-
-本系統已整合 **後端自動推送** 功能,當偵測到 `warning` 或 `danger` 狀態時,自動發送警報到 n8n,再由 n8n 轉發到 Discord。
-
-#### 架構流程
-
-```plaintext
-[前端 Vue] → [後端 FastAPI - 偵測]
-                    ↓ (密度超標時觸發)
-              [Webhook 推送到 n8n]
-                    ↓
-              [n8n - 條件判斷]
-                    ↓
-              [Discord - 發送通知] 🔔
-```
-
-#### 步驟 1: 設定 Discord Webhook
-
-1. **在 Discord 伺服器建立 Webhook:**
-   - 進入 Discord 頻道設定 → 整合 → Webhooks
-   - 點擊「新增 Webhook」
-   - 複製 Webhook URL (格式: `https://discord.com/api/webhooks/...`)
-
-2. **測試 Webhook (可選):**
-   ```bash
-   curl -X POST "YOUR_DISCORD_WEBHOOK_URL" \
-     -H "Content-Type: application/json" \
-     -d '{"content": "測試訊息 from n8n"}'
-   ```
-
-#### 步驟 2: 匯入 n8n 工作流程
-
-1. **登入你的 n8n:** https://n8n.daisy2100.com
-
-2. **匯入工作流程:**
-   - 點擊右上角「...」→「Import from File」
-   - 選擇專案根目錄的 `n8n-workflow-crowd-alert.json`
-   - 點擊「Import」
-
-3. **配置 Discord Webhook 憑證:**
-   - 點擊「發送到 Discord」節點
-   - 點擊「Credential to connect with」→「Create New」
-   - 選擇「Discord Webhook」
-   - 貼上你的 Discord Webhook URL
-   - 點擊「Save」
-
-4. **啟用工作流程:**
-   - 點擊右上角「Active」開關
-   - 工作流程變為運行狀態
-
-5. **取得 Webhook URL:**
-   - 點擊「Webhook 接收後端警報」節點
-   - 複製「Production URL」(格式: `https://n8n.daisy2100.com/webhook/crowd-alert`)
-
-#### 步驟 3: 配置後端環境變數
-
-在後端啟動時設定環境變數:
-
-```bash
-# Linux/macOS
-export N8N_WEBHOOK_URL="https://n8n.daisy2100.com/webhook/crowd-alert"
-export ENABLE_N8N_ALERTS="true"
-export ALERT_COOLDOWN_SECONDS="60"
-
-# Windows PowerShell
-$env:N8N_WEBHOOK_URL="https://n8n.daisy2100.com/webhook/crowd-alert"
-$env:ENABLE_N8N_ALERTS="true"
-$env:ALERT_COOLDOWN_SECONDS="60"
-```
-
-或在 Docker 部署時加入環境變數:
-
-```yaml
-# docker-compose.yaml
-services:
-  backend:
-    environment:
-      - N8N_WEBHOOK_URL=https://n8n.daisy2100.com/webhook/crowd-alert
-      - ENABLE_N8N_ALERTS=true
-      - ALERT_COOLDOWN_SECONDS=60
-```
-
-#### 步驟 4: 測試警報系統
-
-1. **啟動後端服務**
-2. **使用前端上傳高密度人群圖片** (或調低警告閾值進行測試)
-3. **檢查後端日誌:**
-   ```
-   ✅ 成功發送警報到 n8n: warning
-   ```
-4. **在 Discord 頻道查看警報訊息**
-
-#### 環境變數說明
-
-| 變數名稱 | 預設值 | 說明 |
-|---------|--------|------|
-| `N8N_WEBHOOK_URL` | `https://n8n.daisy2100.com/webhook/crowd-alert` | n8n webhook 接收端點 |
-| `ENABLE_N8N_ALERTS` | `true` | 是否啟用 n8n 警報推送 |
-| `ALERT_COOLDOWN_SECONDS` | `60` | 警報冷卻時間 (秒),避免頻繁發送 |
-
-#### 警報 Payload 格式
+## 警報系統
 
 後端發送到 n8n 的數據格式:
 
@@ -320,6 +165,7 @@ services:
 {
   "timestamp": "2025-11-30T12:34:56",
   "alert_type": "danger",
+  "should_notify": true,
   "person_count": 35,
   "density": 7.5,
   "density_unit": "人/㎡",
@@ -335,91 +181,6 @@ services:
 }
 ```
 
-### 🎨 自訂 Discord 訊息格式
-
-編輯 n8n 工作流程中的「發送到 Discord」節點,修改 `content` 欄位即可自訂訊息樣式。
-
-範例訊息格式:
-```markdown
-## 🚨 群眾密度警報
-
-**警報等級:** 🔴 危險
-**時間:** 2025-11-30 12:34:56
-
----
-
-**📊 監控數據:**
-- 👥 人數: **35** 人
-- 📈 密度: **7.5** 人/㎡
-- 📐 監控面積: 20 ㎡
-
-⚠️ **請立即採取行動控制人流！**
-```
-
----
-
-## 部署指南
-
-### 本地開發
-
-#### 後端服務 (Local Python - 推薦開發使用)
-
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate  # Linux/macOS
-# 或 .\venv\Scripts\Activate.ps1  # Windows
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-```
-
-#### 前端服務 (Vite)
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-前端將在 http://localhost:5173 啟動
-
-### 生產環境部署 (Docker)
-
-```bash
-# 啟動後端與 n8n
-docker-compose up -d --build
-
-# 查看狀態
-docker-compose ps
-
-# 停止服務
-docker-compose down
-```
-
----
-
-## 常見問題
-
-### Q1: Docker 建置失敗
-
-**A:** 檢查 Docker Desktop 是否正常運行
-
-```bash
-docker version
-```
-
-### Q2: 前端無法連接後端
-
-**A:** 確認後端服務正常運行、防火牆未阻擋 8001 端口
-
-### Q3: n8n 無法訪問 Backend
-
-**A:** 使用容器內部網路 URL: `http://backend:8001`
-
-### Q4: Webcam 無法啟動
-
-**A:** 瀏覽器需要 HTTPS 或 localhost 才能訪問 Webcam
-
 ---
 
 ## 授權
@@ -430,9 +191,13 @@ docker version
 
 ## 聯絡資訊
 
-- **作者:** Katherine623
-- **GitHub:** [@Katherine623](https://github.com/Katherine623)
-- **專案連結:** [Crowd-Density-Detection](https://github.com/Katherine623/Crowd-Density-Detection)
+- **作者:** Katherine623、Daisy2100
+- **GitHub:** 
+  - [@Katherine623](https://github.com/Katherine623)
+  - [@Daisy2100](https://github.com/Daisy2100)
+- **專案連結:** 
+  - [Crowd-Density-Detection (Katherine623)](https://github.com/Katherine623/Crowd-Density-Detection)
+  - [crowd-density (Daisy2100)](https://github.com/Daisy2100/crowd-density)
 
 ---
 
@@ -442,7 +207,6 @@ docker version
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [Vue.js](https://vuejs.org/)
 - [n8n](https://n8n.io/)
-- [Google Vertex AI](https://cloud.google.com/vertex-ai)
 
 ---
 
@@ -450,5 +214,5 @@ docker version
 
 ---
 
-**最後更新:** 2025-11-26  
+**最後更新:** 2025-11-30 
 **版本:** 1.0.0
