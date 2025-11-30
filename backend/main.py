@@ -238,6 +238,7 @@ async def send_alert_to_n8n(detection_result: DetectionResult):
         payload = {
             "timestamp": now.isoformat(),
             "alert_type": detection_result.status,
+            "should_notify": True,  # 後端已判斷需要發送通知
             "person_count": detection_result.person_count,
             "density": detection_result.density,
             "density_unit": "人/㎡",
