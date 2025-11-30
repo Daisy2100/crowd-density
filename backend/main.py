@@ -27,6 +27,10 @@ from contextlib import asynccontextmanager
 import httpx  # 用於發送 webhook 到 n8n
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# 載入環境變數
+load_dotenv()
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +40,7 @@ logger = logging.getLogger(__name__)
 model = None
 
 # n8n Webhook 配置
-N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "https://n8n.daisy2100.com/webhook/crowd-alert")
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "http://n8n:5678/webhook/crowd-alert")
 ENABLE_N8N_ALERTS = os.getenv("ENABLE_N8N_ALERTS", "true").lower() == "true"
 
 # 警報節流配置 (避免頻繁發送)
@@ -257,6 +261,8 @@ async def send_alert_to_n8n(detection_result: DetectionResult):
                 last_alert_time = now
             else:
                 logger.warning(f"⚠️ n8n webhook 回應異常: {response.status_code}")
+                logger.warning(f"回應內容: {response.text[:500]}")
+                logger.warning(f"回應 Headers: {dict(response.headers)}")
                 
     except httpx.TimeoutException:
         logger.error("❌ n8n webhook 請求超時 (5 秒)")
