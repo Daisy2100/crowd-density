@@ -1,6 +1,6 @@
 # 群眾密度監控系統 | Crowd Density Detection System
 
-> **AI 驅動的即時人流監控、智能警報與自動建議系統**  
+> **AI 驅動的即時人流監控與智能警報系統**  
 > 基於 YOLOv8、FastAPI、Vue 3 與 n8n 的企業級解決方案
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -24,7 +24,7 @@
 
 ## 專案概述
 
-本系統是一套完整的 **AI 驅動群眾密度監控解決方案**，整合電腦視覺、自動化工作流與智能推理。
+本系統是一套完整的 **AI 驅動群眾密度監控解決方案**，整合電腦視覺、自動化工作流與即時警報通知。
 
 ---
 
@@ -34,7 +34,7 @@
 
 | **項目** | **配置與決策** | **說明** |
 | --- | --- | --- |
-| **系統目標** | AI 驅動的群眾密度監控、警報與自動建議 | 辨識 → 推理 → 行動 (通知) |
+| **系統目標** | AI 驅動的群眾密度監控與即時警報 | 辨識 → 判斷 → 通知 |
 | **主機環境** | GCP Compute Engine **`e2-small` (2GB RAM)** | 穩定運行 YOLO 和 n8n |
 | **資料持久化** | **n8n 內建 SQLite** | 儲存工作流、執行紀錄和憑證 |
 
@@ -136,9 +136,8 @@ crowd-density/
 │   ├── main.py                   # FastAPI 應用入口
 │   ├── requirements.txt          # Python 依賴
 │   ├── yolov8n.pt               # YOLOv8 模型檔案
-│   ├── Dockerfile               # 後端容器配置
-│   ├── deploy.ps1               # Windows 打包腳本
-│   └── build.sh                 # Linux 建置腳本
+│   ├── .env                     # 環境變數配置 (本地開發)
+│   └── .env.example             # 環境變數範例
 ├── frontend/                     # Vue 3 前端
 │   ├── src/
 │   │   ├── App.vue              # 主應用元件
@@ -147,9 +146,7 @@ crowd-density/
 │   │   └── vite-env.d.ts        # TypeScript 環境定義
 │   ├── package.json             # Node.js 依賴
 │   ├── vite.config.ts           # Vite 建置配置
-│   ├── tsconfig.json            # TypeScript 配置
-│   ├── .env.development         # 開發環境配置
-│   └── .env.production          # 生產環境配置
+│   └── tsconfig.json            # TypeScript 配置
 ├── setup.ps1                    # 快速設置腳本 (Windows)
 ├── setup.sh                     # 快速設置腳本 (Linux/macOS)
 └── README.md                    # 專案文檔 (本文件)
@@ -183,12 +180,6 @@ crowd-density/
 
 ---
 
-## 授權
-
-本專案採用 **MIT License** 授權。
-
----
-
 ## 聯絡資訊
 
 - **作者:** Katherine623、Daisy2100
@@ -210,9 +201,10 @@ crowd-density/
 
 ---
 
-⭐ **如果這個專案對您有幫助,歡迎給個星星支持！**
+## 授權
+
+本專案採用 **MIT License** 授權。
 
 ---
 
-**最後更新:** 2025-11-30 
-**版本:** 1.0.0
+⭐ **如果這個專案對您有幫助,歡迎給個星星支持！**
