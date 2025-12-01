@@ -947,7 +947,6 @@ onBeforeUnmount(() => {
         <h1 class="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-cyan-600 to-blue-600 mb-2 animate-gradient">
           🎯 群眾密度監控系統
         </h1>
-        <p class="text-sm md:text-base text-gray-600 font-medium">🤖 AI 驅動的即時人流偵測與智能警報系統</p>
       </header>
 
       <!-- Main Content -->
@@ -1244,11 +1243,6 @@ onBeforeUnmount(() => {
 
       <!-- Footer -->
       <footer class="bg-white/90 backdrop-blur-sm text-center py-3 text-gray-600 text-xs border-t border-gray-200 flex-shrink-0 shadow-sm">
-        <div class="flex justify-center items-center gap-4 flex-wrap">
-          <span class="bg-blue-50 px-3 py-1 rounded-full border border-blue-200">🔗 API: {{ apiUrl }}</span>
-          <span class="bg-cyan-50 px-3 py-1 rounded-full border border-cyan-200">🎯 ROI: {{ useRoi ? '✅ 啟用' : '❌ 停用' }}</span>
-          <span class="bg-blue-50 px-3 py-1 rounded-full border border-blue-200">📐 面積: {{ areaM2 }}㎡</span>
-        </div>
       </footer>
     </div>
   </div>
