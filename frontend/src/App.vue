@@ -3,8 +3,8 @@ import { ref, computed, onBeforeUnmount, nextTick } from 'vue'
 
 // ============== 常數定義 ==============
 const MIN_DENSITY_THRESHOLD = 0.001
-const VIDEO_DETECTION_INTERVAL_MS = 1000
-const UI_UPDATE_DEBOUNCE_MS = 100 // UI 更新防抖時間
+const VIDEO_DETECTION_INTERVAL_MS = 33 // 30 FPS
+const UI_UPDATE_DEBOUNCE_MS = 10 // UI 更新防抖時間
 
 interface BoundingBox {
   x1: number
